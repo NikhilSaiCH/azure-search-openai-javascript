@@ -1,4 +1,4 @@
-targetScope = 'subscription'
+targetScope = 'resourceGroup'
 
 @minLength(1)
 @maxLength(64)
@@ -9,36 +9,28 @@ param environmentName string
 @description('Primary location for all resources')
 param location string
 
-param resourceGroupName string = ''
 param containerAppsEnvironmentName string = ''
 param containerRegistryName string = ''
 param webAppName string = 'webapp'
 param searchApiName string = 'search'
 param searchApiImageName string = ''
-param indexerApiName string = 'indexer'
-param indexerApiImageName string = ''
 
 param logAnalyticsName string = ''
 param applicationInsightsName string = ''
 param applicationInsightsDashboardName string = ''
 
 param searchServiceName string = ''
-param searchServiceResourceGroupName string = ''
 param searchServiceLocation string = ''
-// The free tier does not support managed identity (required) or semantic search (optional)
 @allowed(['basic', 'standard', 'standard2', 'standard3', 'storage_optimized_l1', 'storage_optimized_l2'])
 param searchServiceSkuName string
 param searchIndexName string
 
 param storageAccountName string = ''
-param storageResourceGroupName string = ''
-param storageResourceGroupLocation string = location
 param storageContainerName string = 'content'
 param storageSkuName string
 
 param openAiServiceName string = ''
-param openAiResourceGroupName string = ''
-@description('Location for the OpenAI resource group')
+@description('Location for the OpenAI resource')
 @allowed(['australiaeast', 'canadaeast', 'eastus', 'eastus2', 'francecentral', 'japaneast', 'northcentralus', 'swedencentral', 'switzerlandnorth', 'uksouth', 'westeurope'])
 @metadata({
   azd: {
@@ -57,12 +49,9 @@ param openAiSkuName string = 'S0'
 })
 param webAppLocation string
 
-param chatGptDeploymentName string // Set in main.parameters.json
-param chatGptDeploymentCapacity int = 30
-param chatGptModelName string // Set in main.parameters.json
-param chatGptModelVersion string // Set in main.parameters.json
+param chatGptDeploymentName string
+param chatGptModelName string
 param embeddingDeploymentName string = 'embedding'
-param embeddingDeploymentCapacity int = 30
 param embeddingModelName string = 'text-embedding-ada-002'
 
 @description('Id of the user or app to assign application roles')
@@ -70,12 +59,9 @@ param principalId string = ''
 
 param allowedOrigin string
 
-// Allow to override the default backend
 param backendUri string = ''
 
-// Only needed for CD due to internal policies restrictions
 param aliasTag string = ''
-// Differentiates between automated and manual deployments
 param isContinuousDeployment bool = false
 
 var abbrs = loadJsonContent('abbreviations.json')
@@ -83,32 +69,12 @@ var resourceToken = toLower(uniqueString(subscription().id, environmentName, loc
 var tags = union({ 'azd-env-name': environmentName }, empty(aliasTag) ? {} : { alias: aliasTag })
 var allowedOrigins = empty(allowedOrigin) ? [webApp.outputs.uri] : [webApp.outputs.uri, allowedOrigin]
 
-var indexerApiIdentityName = '${abbrs.managedIdentityUserAssignedIdentities}indexer-api-${resourceToken}'
 var searchApiIdentityName = '${abbrs.managedIdentityUserAssignedIdentities}search-api-${resourceToken}'
-
-// Organize resources in a resource group
-resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
-  name: !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourcesResourceGroups}${environmentName}'
-  location: location
-  tags: tags
-}
-
-resource openAiResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' existing = if (!empty(openAiResourceGroupName)) {
-  name: !empty(openAiResourceGroupName) ? openAiResourceGroupName : resourceGroup.name
-}
-
-resource searchServiceResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' existing = if (!empty(searchServiceResourceGroupName)) {
-  name: !empty(searchServiceResourceGroupName) ? searchServiceResourceGroupName : resourceGroup.name
-}
-
-resource storageResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' existing = if (!empty(storageResourceGroupName)) {
-  name: !empty(storageResourceGroupName) ? storageResourceGroupName : resourceGroup.name
-}
 
 // Monitor application with Azure Monitor
 module monitoring './core/monitor/monitoring.bicep' = {
   name: 'monitoring'
-  scope: resourceGroup
+  scope: resourceGroup()
   params: {
     location: location
     tags: tags
@@ -121,7 +87,7 @@ module monitoring './core/monitor/monitoring.bicep' = {
 // Container apps host (including container registry)
 module containerApps './core/host/container-apps.bicep' = {
   name: 'container-apps'
-  scope: resourceGroup
+  scope: resourceGroup()
   params: {
     name: 'containerapps'
     containerAppsEnvironmentName: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${abbrs.appManagedEnvironments}${resourceToken}'
@@ -137,7 +103,7 @@ module containerApps './core/host/container-apps.bicep' = {
 // The application frontend
 module webApp './core/host/staticwebapp.bicep' = {
   name: 'webapp'
-  scope: resourceGroup
+  scope: resourceGroup()
   params: {
     name: !empty(webAppName) ? webAppName : '${abbrs.webStaticSites}web-${resourceToken}'
     location: webAppLocation
@@ -145,10 +111,10 @@ module webApp './core/host/staticwebapp.bicep' = {
   }
 }
 
-// search API identity
+// Search API identity
 module searchApiIdentity 'core/security/managed-identity.bicep' = {
   name: 'search-api-identity'
-  scope: resourceGroup
+  scope: resourceGroup()
   params: {
     name: searchApiIdentityName
     location: location
@@ -158,7 +124,7 @@ module searchApiIdentity 'core/security/managed-identity.bicep' = {
 // The search API
 module searchApi './core/host/container-app.bicep' = {
   name: 'search-api'
-  scope: resourceGroup
+  scope: resourceGroup()
   params: {
     name: !empty(searchApiName) ? searchApiName : '${abbrs.appContainerApps}search-${resourceToken}'
     location: location
@@ -226,89 +192,10 @@ module searchApi './core/host/container-app.bicep' = {
   }
 }
 
-// Indexer API identity
-module indexerApiIdentity 'core/security/managed-identity.bicep' = {
-  name: 'indexer-api-identity'
-  scope: resourceGroup
-  params: {
-    name: indexerApiIdentityName
-    location: location
-  }
-}
-
-// The indexer API
-module indexerApi './core/host/container-app.bicep' = {
-  name: 'indexer-api'
-  scope: resourceGroup
-  params: {
-    name: !empty(indexerApiName) ? indexerApiName : '${abbrs.appContainerApps}indexer-${resourceToken}'
-    location: location
-    tags: union(tags, { 'azd-service-name': indexerApiName })
-    containerAppsEnvironmentName: containerApps.outputs.environmentName
-    containerRegistryName: containerApps.outputs.registryName
-    identityName: indexerApiIdentityName
-    containerCpuCoreCount: '1.0'
-    containerMemory: '2.0Gi'
-    secrets: [
-      {
-        name: 'appinsights-cs'
-        value: monitoring.outputs.applicationInsightsConnectionString
-      }
-    ]
-    env: [
-      {
-        name: 'AZURE_OPENAI_CHATGPT_DEPLOYMENT'
-        value: chatGptDeploymentName
-      }
-      {
-        name: 'AZURE_OPENAI_CHATGPT_MODEL'
-        value: chatGptModelName
-      }
-      {
-        name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
-        value: embeddingDeploymentName
-      }
-      {
-        name: 'AZURE_OPENAI_EMBEDDING_MODEL'
-        value: embeddingModelName
-      }
-      {
-        name: 'AZURE_OPENAI_SERVICE'
-        value: openAi.outputs.name
-      }
-      {
-        name: 'AZURE_SEARCH_INDEX'
-        value: searchIndexName
-      }
-      {
-        name: 'AZURE_SEARCH_SERVICE'
-        value: searchService.outputs.name
-      }
-      {
-        name: 'AZURE_STORAGE_ACCOUNT'
-        value: storage.outputs.name
-      }
-      {
-        name: 'AZURE_STORAGE_CONTAINER'
-        value: storageContainerName
-      }
-      {
-        name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-        secretRef: 'appinsights-cs'
-      }
-      {
-        name: 'AZURE_CLIENT_ID'
-        value: indexerApiIdentity.outputs.clientId
-      }
-    ]
-    imageName: !empty(indexerApiImageName) ? indexerApiImageName : 'nginx:latest'
-    targetPort: 3001
-  }
-}
-
+// Azure OpenAI account (no model deployments — created manually as part of the lab)
 module openAi 'core/ai/cognitiveservices.bicep' = {
   name: 'openai'
-  scope: openAiResourceGroup
+  scope: resourceGroup()
   params: {
     name: !empty(openAiServiceName) ? openAiServiceName : '${abbrs.cognitiveServicesAccounts}${resourceToken}'
     location: openAiResourceGroupLocation
@@ -316,36 +203,14 @@ module openAi 'core/ai/cognitiveservices.bicep' = {
     sku: {
       name: openAiSkuName
     }
-    disableLocalAuth: true
-    deployments: [
-      {
-        name: chatGptDeploymentName
-        model: {
-          format: 'OpenAI'
-          name: chatGptModelName
-          version: chatGptModelVersion
-        }
-        sku: {
-          name: 'Standard'
-          capacity: chatGptDeploymentCapacity
-        }
-      }
-      {
-        name: embeddingDeploymentName
-        model: {
-          format: 'OpenAI'
-          name: embeddingModelName
-          version: '2'
-        }
-        capacity: embeddingDeploymentCapacity
-      }
-    ]
+    disableLocalAuth: false
+    deployments: []
   }
 }
 
 module searchService 'core/search/search-services.bicep' = {
   name: 'search-service'
-  scope: searchServiceResourceGroup
+  scope: resourceGroup()
   params: {
     name: !empty(searchServiceName) ? searchServiceName : 'gptkb-${resourceToken}'
     location: !empty(searchServiceLocation) ? searchServiceLocation : location
@@ -364,10 +229,10 @@ module searchService 'core/search/search-services.bicep' = {
 
 module storage 'core/storage/storage-account.bicep' = {
   name: 'storage'
-  scope: storageResourceGroup
+  scope: resourceGroup()
   params: {
     name: !empty(storageAccountName) ? storageAccountName : '${abbrs.storageStorageAccounts}${resourceToken}'
-    location: storageResourceGroupLocation
+    location: location
     tags: tags
     publicNetworkAccess: 'Enabled'
     sku: {
@@ -388,136 +253,85 @@ module storage 'core/storage/storage-account.bicep' = {
 
 // USER ROLES
 module openAiRoleUser 'core/security/role.bicep' = if (!isContinuousDeployment) {
-  scope: openAiResourceGroup
+  scope: resourceGroup()
   name: 'openai-role-user'
   params: {
     principalId: principalId
-    // Cognitive Services OpenAI User
-    roleDefinitionId: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
+    roleDefinitionId: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd' // Cognitive Services OpenAI User
     principalType: 'User'
   }
 }
 
 module storageContribRoleUser 'core/security/role.bicep' = if (!isContinuousDeployment) {
-  scope: storageResourceGroup
+  scope: resourceGroup()
   name: 'storage-contribrole-user'
   params: {
     principalId: principalId
-    // Storage Blob Data Contributor
-    roleDefinitionId: 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+    roleDefinitionId: 'ba92f5b4-2d11-453d-a403-e96b0029c9fe' // Storage Blob Data Contributor
     principalType: 'User'
   }
 }
 
 module searchContribRoleUser 'core/security/role.bicep' = if (!isContinuousDeployment) {
-  scope: searchServiceResourceGroup
+  scope: resourceGroup()
   name: 'search-contrib-role-user'
   params: {
     principalId: principalId
-    // Search Index Data Contributor
-    roleDefinitionId: '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
+    roleDefinitionId: '8ebe5a00-799e-43f5-93ac-243d3dce84a7' // Search Index Data Contributor
     principalType: 'User'
   }
 }
 
 module searchSvcContribRoleUser 'core/security/role.bicep' = if (!isContinuousDeployment) {
-  scope: searchServiceResourceGroup
+  scope: resourceGroup()
   name: 'search-svccontrib-role-user'
   params: {
     principalId: principalId
-    // Search Service Contributor
-    roleDefinitionId: '7ca78c08-252a-4471-8644-bb5ff32d4ba0'
+    roleDefinitionId: '7ca78c08-252a-4471-8644-bb5ff32d4ba0' // Search Service Contributor
     principalType: 'User'
   }
 }
 
 // SYSTEM IDENTITIES
 module openAiRoleSearchApi 'core/security/role.bicep' = {
-  scope: openAiResourceGroup
+  scope: resourceGroup()
   name: 'openai-role-searchapi'
   params: {
     principalId: searchApi.outputs.identityPrincipalId
-    // Cognitive Services OpenAI User
-    roleDefinitionId: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
+    roleDefinitionId: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd' // Cognitive Services OpenAI User
     principalType: 'ServicePrincipal'
   }
 }
 
 module storageRoleSearchApi 'core/security/role.bicep' = {
-  scope: storageResourceGroup
+  scope: resourceGroup()
   name: 'storage-role-searchapi'
   params: {
     principalId: searchApi.outputs.identityPrincipalId
-    // Storage Blob Data Reader
-    roleDefinitionId: '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1'
+    roleDefinitionId: '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1' // Storage Blob Data Reader
     principalType: 'ServicePrincipal'
   }
 }
 
 module searchRoleSearchApi 'core/security/role.bicep' = {
-  scope: searchServiceResourceGroup
+  scope: resourceGroup()
   name: 'search-role-searchapi'
   params: {
     principalId: searchApi.outputs.identityPrincipalId
-    // Search Index Data Reader
-    roleDefinitionId: '1407120a-92aa-4202-b7e9-c0e197c71c8f'
-    principalType: 'ServicePrincipal'
-  }
-}
-
-module openAiRoleIndexerApi 'core/security/role.bicep' = {
-  scope: openAiResourceGroup
-  name: 'openai-role-indexer'
-  params: {
-    principalId: indexerApi.outputs.identityPrincipalId
-    // Cognitive Services OpenAI User
-    roleDefinitionId: '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
-    principalType: 'ServicePrincipal'
-  }
-}
-
-module storageContribRoleIndexerApi 'core/security/role.bicep' = {
-  scope: storageResourceGroup
-  name: 'storage-contribrole-indexer'
-  params: {
-    principalId: indexerApi.outputs.identityPrincipalId
-    // Storage Blob Data Contributor
-    roleDefinitionId: 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
-    principalType: 'ServicePrincipal'
-  }
-}
-
-module searchContribRoleIndexerApi 'core/security/role.bicep' = {
-  scope: searchServiceResourceGroup
-  name: 'search-contrib-role-indexer'
-  params: {
-    principalId: indexerApi.outputs.identityPrincipalId
-    // Search Index Data Contributor
-    roleDefinitionId: '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
-    principalType: 'ServicePrincipal'
-  }
-}
-
-module searchSvcContribRoleIndexerApi 'core/security/role.bicep' = {
-  scope: searchServiceResourceGroup
-  name: 'search-svccontrib-role-indexer'
-  params: {
-    principalId: indexerApi.outputs.identityPrincipalId
-    // Search Service Contributor
-    roleDefinitionId: '7ca78c08-252a-4471-8644-bb5ff32d4ba0'
+    roleDefinitionId: '1407120a-92aa-4202-b7e9-c0e197c71c8f' // Search Index Data Reader
     principalType: 'ServicePrincipal'
   }
 }
 
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output AZURE_RESOURCE_GROUP string = resourceGroup.name
+output AZURE_RESOURCE_GROUP string = resourceGroup().name
 
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerApps.outputs.registryLoginServer
 output AZURE_CONTAINER_REGISTRY_NAME string = containerApps.outputs.registryName
 
 output AZURE_OPENAI_SERVICE string = openAi.outputs.name
-output AZURE_OPENAI_RESOURCE_GROUP string = openAiResourceGroup.name
+output AZURE_OPENAI_RESOURCE_GROUP string = resourceGroup().name
 output AZURE_OPENAI_CHATGPT_DEPLOYMENT string = chatGptDeploymentName
 output AZURE_OPENAI_CHATGPT_MODEL string = chatGptModelName
 output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = embeddingDeploymentName
@@ -525,19 +339,17 @@ output AZURE_OPENAI_EMBEDDING_MODEL string = embeddingModelName
 
 output AZURE_SEARCH_INDEX string = searchIndexName
 output AZURE_SEARCH_SERVICE string = searchService.outputs.name
-output AZURE_SEARCH_SERVICE_RESOURCE_GROUP string = searchServiceResourceGroup.name
+output AZURE_SEARCH_SERVICE_RESOURCE_GROUP string = resourceGroup().name
 output AZURE_SEARCH_SEMANTIC_RANKER string = searchServiceSkuName == 'standard' ? 'enabled' : 'disabled'
 
 output AZURE_STORAGE_ACCOUNT string = storage.outputs.name
 output AZURE_STORAGE_CONTAINER string = storageContainerName
-output AZURE_STORAGE_RESOURCE_GROUP string = storageResourceGroup.name
+output AZURE_STORAGE_RESOURCE_GROUP string = resourceGroup().name
 
 output WEBAPP_URI string = webApp.outputs.uri
 output SEARCH_API_URI string = searchApi.outputs.uri
-output INDEXER_API_URI string = indexerApi.outputs.uri
 
 output ALLOWED_ORIGINS string = join(allowedOrigins, ',')
 output BACKEND_URI string = !empty(backendUri) ? backendUri : searchApi.outputs.uri
 
-output INDEXER_PRINCIPAL_ID string = indexerApi.outputs.identityPrincipalId
 output SEARCH_API_PRINCIPAL_ID string = searchApi.outputs.identityPrincipalId

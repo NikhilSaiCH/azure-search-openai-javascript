@@ -32,24 +32,3 @@ services:
     docker:
       context: ../..
       remoteBuild: true
-
-  indexer:
-    project: ./packages/indexer
-    language: ts
-    host: containerapp
-    docker:
-      context: ../..
-      remoteBuild: true
-
-hooks:
-  postup:
-    windows:
-      shell: pwsh
-      run: ./scripts/index-data.ps1
-      interactive: true
-      continueOnError: false
-    posix:
-      shell: sh
-      run: ./scripts/index-data.sh
-      interactive: true
-      continueOnError: false

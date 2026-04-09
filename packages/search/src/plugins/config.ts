@@ -39,8 +39,8 @@ export default fp(
       azureOpenAiChatGptModel: process.env.AZURE_OPENAI_CHATGPT_MODEL || 'gpt-4o-mini',
       azureOpenAiEmbeddingDeployment: process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT || '',
       azureOpenAiEmbeddingModel: process.env.AZURE_OPENAI_EMBEDDING_MODEL || 'text-embedding-ada-002',
-      kbFieldsContent: process.env.KB_FIELDS_CONTENT || 'content',
-      kbFieldsSourcePage: process.env.KB_FIELDS_SOURCEPAGE || 'sourcepage',
+      kbFieldsContent: process.env.KB_FIELDS_CONTENT || 'chunk',
+      kbFieldsSourcePage: process.env.KB_FIELDS_SOURCEPAGE || 'title',
       allowedOrigins: process.env.ALLOWED_ORIGINS || '*',
     };
 
