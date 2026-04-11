@@ -1,6 +1,6 @@
 # Set these two values first
-$resourceGroup = "nikhil-rg"
-$subscriptionId = "4dd60a42-8e1f-4d8b-b07a-fae39d4a2973"
+$resourceGroup = ""
+$subscriptionId = ""
 $envName = "ragproject"
 
 # STEP 1: Get latest SUCCESSFUL ARM template deployment ONLY
