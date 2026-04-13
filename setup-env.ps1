@@ -4,15 +4,7 @@ $subscriptionId = ""
 $envName = "ragproject"
 
 # STEP 1: Get latest SUCCESSFUL ARM template deployment ONLY
-$deploymentName = az deployment group list `
-  --resource-group $resourceGroup `
-  --query "[?starts_with(name, 'Microsoft.Template') && properties.provisioningState=='Succeeded'] | sort_by(@,&properties.timestamp) | [-1].name" `
-  -o tsv
-
-if ([string]::IsNullOrWhiteSpace($deploymentName)) {
-  throw "No valid ARM template deployment found."
-}
-
+$deploymentName = ""
 Write-Host "Using deployment: $deploymentName"
 
 # STEP 2: Get outputs from that deployment
